@@ -19,7 +19,7 @@ const products:Product[] = [
 const categories=['Все товары','Продукты','Овощи и фрукты','Для дома','Красота и уход','Для детей']
 export default function App(){
  const [ky,setKy]=useState(false),[category,setCategory]=useState('Все товары'),[query,setQuery]=useState(''),[cart,setCart]=useState<Record<number,number>>({}),[cartOpen,setCartOpen]=useState(false),[checkout,setCheckout]=useState(false),[fulfillment,setFulfillment]=useState<'delivery'|'pickup'>('delivery'),[paymentProof,setPaymentProof]=useState(''),[customerName,setCustomerName]=useState(''),[phone,setPhone]=useState('+996 '),[address,setAddress]=useState(''),[notice,setNotice]=useState('')
- const t=(ru:string,kg:string)=>ky?kg:ru
+ const t=(ru:string,kg:string=ru)=>ky?kg:ru
  const filtered=useMemo(()=>products.filter(p=>(category==='Все товары'||p.category===category)&&(p.name+' '+p.ky).toLowerCase().includes(query.toLowerCase())),[category,query])
  const count=Object.values(cart).reduce((a,b)=>a+b,0),total=products.reduce((s,p)=>s+p.price*(cart[p.id]||0),0)
  const change=(id:number,d:number)=>setCart(prev=>({...prev,[id]:Math.max(0,(prev[id]||0)+d)}))
