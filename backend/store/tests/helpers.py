@@ -1,14 +1,19 @@
 """Shared fixtures for store tests. Not a test module itself."""
 
 from decimal import Decimal
+from io import StringIO
 from unittest import mock
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.cache import cache
+from django.core.management import call_command
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from ..models import Category, Product, StoreSettings
 from ..services import OrderLine, OrderRequest, place_order
+from ..staff.throttles import StaffRateThrottle
 from ..throttles import (
     CatalogueReadThrottle,
     OrderCreateThrottle,
@@ -28,7 +33,11 @@ ALL_THROTTLES = (
     OrderCreateThrottle,
     OrderReadThrottle,
     PaymentReportThrottle,
+    StaffRateThrottle,
 )
+
+STAFF_PASSWORD = "Kyz-Kumush-2026-pass"
+STAFF_GROUP = "Store staff"
 
 ORDER_KEYS = {
     "number",
@@ -135,3 +144,22 @@ class StoreAPITestCase(APITestCase):
             patcher = mock.patch.object(throttle, "THROTTLE_RATES", {})
             patcher.start()
             self.addCleanup(patcher.stop)
+
+
+def make_staff(username, *, in_group=True, password=STAFF_PASSWORD, **fields):
+    """A staff account; by default in the "Store staff" group (setup_staff_group)."""
+    fields.setdefault("is_staff", True)
+    user = get_user_model().objects.create_user(username, password=password, **fields)
+    if in_group:
+        user.groups.add(Group.objects.get(name=STAFF_GROUP))
+    return user
+
+
+class StaffAPITestCase(StoreAPITestCase):
+    """The real "Store staff" group, one staff member in it, and the owner (superuser)."""
+
+    def setUp(self):
+        super().setUp()
+        call_command("setup_staff_group", stdout=StringIO())
+        self.staff = make_staff("aigul", first_name="Айгуль")
+        self.owner = get_user_model().objects.create_superuser("owner", password=STAFF_PASSWORD)

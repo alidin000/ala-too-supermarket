@@ -32,7 +32,7 @@ class StoreEndpointTests(StoreAPITestCase):
             response.json(),
             {
                 "name": "Ала-Тоо Маркет",
-                "city": "Бишкек",
+                "city": "Кызыл-Кия",
                 "phone": "",
                 "pickup_address": "",
                 "opening_hours": "",

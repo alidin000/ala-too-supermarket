@@ -1,10 +1,20 @@
-"""Project URL routes. The store API lives in store/urls.py."""
+"""Project URL routes, all on one origin.
+
+- ``/api/...``: the public store API (store/urls.py) and the staff API (store/staff/urls.py).
+  Unknown API paths get a JSON 404.
+- ``/<DJANGO_ADMIN_PATH>``: the owner's Django admin (default ``/backoffice/``).
+- ``/static/...`` and the files of the built storefront are served by WhiteNoise before
+  routing.
+- Every other path is a storefront or staff-panel page: index.html (config.views).
+"""
 
 import logging
+import re
 
+from django.conf import settings
 from django.contrib import admin
 from django.db import DatabaseError, connection
-from django.urls import include, path
+from django.urls import include, path, re_path
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
@@ -14,6 +24,8 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
+
+from config.views import API_NOT_FOUND_URL_NAME, api_not_found, spa_index
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +60,18 @@ def health(request: Request) -> Response:
     return Response(payload)
 
 
+ADMIN_PATH = settings.DJANGO_ADMIN_PATH
+
+# Not storefront pages: missing static or asset files are real 404s (a stale page asking
+# for a deleted chunk must fail, not get HTML), and the bare admin path without its slash
+# must stay unmatched so APPEND_SLASH redirects it to the admin.
+SPA_PATH = r"^(?!static/|assets/)(?!{admin}$).*$".format(admin=re.escape(ADMIN_PATH.rstrip("/")))
+
 urlpatterns = [
-    path("admin/", admin.site.urls),
     path("api/health/", health, name="health"),
+    path("api/staff/", include("store.staff.urls")),
     path("api/", include("store.urls")),
+    re_path(r"^api(?:/.*)?$", api_not_found, name=API_NOT_FOUND_URL_NAME),
+    path(ADMIN_PATH, admin.site.urls),
+    re_path(SPA_PATH, spa_index, name="spa"),
 ]

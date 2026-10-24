@@ -1,10 +1,16 @@
 import { useMemo, useSyncExternalStore } from 'react'
 
-// URL state instead of a router dependency:
+// URL state instead of a router dependency.
+//
+// Customer routes are query-based and ignore the path:
 //   /                          catalogue (optional ?category=<slug>&q=<text>)
 //   /?view=checkout            checkout
 //   /?view=orders              "Мои заказы", the orders saved on this device
 //   /?order=<token>            one order, read by its secret token
+//
+// Staff routes are path-based and live under /admin (src/staff/routes.ts). Only the path
+// check lives here, so the customer bundle can pick which app to render without loading
+// any staff code.
 
 export type Route =
   | { name: 'catalog'; category: string; q: string }
@@ -56,8 +62,16 @@ export function routeHref(route: Route): string {
 
 export const catalogRoute = (category = '', q = ''): Route => ({ name: 'catalog', category, q })
 
-export function navigate(route: Route, options: { replace?: boolean; state?: unknown } = {}): void {
-  const href = routeHref(route)
+/** True for /admin and everything below it: the staff panel, a separate lazy-loaded app. */
+export function isStaffPath(pathname: string): boolean {
+  return pathname === '/admin' || pathname.startsWith('/admin/')
+}
+
+/** Navigates in place to a same-origin href such as "/admin/orders/AT-1" or "/?view=orders". */
+export function navigateTo(
+  href: string,
+  options: { replace?: boolean; state?: unknown } = {},
+): void {
   if (options.replace) {
     window.history.replaceState(options.state ?? null, '', href)
   } else {
@@ -65,6 +79,10 @@ export function navigate(route: Route, options: { replace?: boolean; state?: unk
     window.history.pushState(options.state ?? null, '', href)
   }
   window.dispatchEvent(new Event(NAVIGATE_EVENT))
+}
+
+export function navigate(route: Route, options: { replace?: boolean; state?: unknown } = {}): void {
+  navigateTo(routeHref(route), options)
 }
 
 /** How the current page was reached, so the app can manage scroll and focus. */
@@ -86,8 +104,30 @@ function subscribe(onChange: () => void): () => void {
 }
 
 const getSearch = () => window.location.search
+const getPathname = () => window.location.pathname
+const getPathAndSearch = () => `${window.location.pathname}${window.location.search}`
 
 export function useRoute(): Route {
   const search = useSyncExternalStore(subscribe, getSearch, () => '')
   return useMemo(() => parseRoute(search), [search])
+}
+
+export function usePathname(): string {
+  return useSyncExternalStore(subscribe, getPathname, () => '/')
+}
+
+export interface LocationState {
+  pathname: string
+  search: string
+}
+
+/** The current path and query string; re-renders on navigation and back/forward. */
+export function useLocation(): LocationState {
+  const value = useSyncExternalStore(subscribe, getPathAndSearch, () => '/')
+  return useMemo(() => {
+    const index = value.indexOf('?')
+    return index < 0
+      ? { pathname: value, search: '' }
+      : { pathname: value.slice(0, index), search: value.slice(index) }
+  }, [value])
 }

@@ -3,16 +3,16 @@
 Replaces the checklist in GitHub issue #1 ("Build production-ready supermarket storefront").
 Written for the store owner and one developer. Last updated 2026-10-24.
 
-**Goal.** Customers in Bishkek order groceries from their phones for delivery or pickup and
+**Goal.** Customers in Kyzyl-Kiya order groceries from their phones for delivery or pickup and
 pay cash on receipt. Staff process orders in a simple admin. MBANK transfers come later,
 only with the store's real merchant details.
 
 **Status legend**
 
-- `[x]` done in this round. Verified by automated tests (128 backend tests on SQLite and
-  PostgreSQL 18, 62 frontend tests) and by an end-to-end browser run of the merged branch:
-  catalogue, Cyrillic search, checkout, server totals, stock reserved, staff confirm and
-  cancel, stock returned once.
+- `[x]` done in this round. Verified by automated tests (192 backend tests on SQLite and
+  PostgreSQL 18, 154 frontend tests) and by end-to-end browser runs of the merged branch:
+  catalogue, Cyrillic search, checkout, server totals, stock reserved, staff panel login
+  and lockout, confirm and cancel, stock returned once, view-only staff refused.
 - `[ ]` not started, or needs the live deployment to verify.
 - **Owner** marks a decision or task only the owner can do.
 
@@ -77,8 +77,21 @@ the order and its current status.
 - [x] Store settings page (contacts, fees, minimum order, payment options) behind
   `GET /api/store/`.
 
+- [x] Staff panel inside the web app at `/admin`, in the store's design: orders board with
+  live counts and 20-second refresh, order page with only the allowed next steps, cancel
+  with reason, stock and price editing, and the "принимаем заказы" switch. Each button
+  follows the user's Django permissions.
+- [x] One origin: Django serves the storefront, the staff panel and the API, so the staff
+  login is a first-party cookie (`onrender.com` is a public suffix, so two Render services
+  could not share it). Django admin moved to `/backoffice/` for owner-only setup.
+- [x] Staff login security: HttpOnly, Secure, SameSite=Strict `__Host-` session cookie,
+  12-hour sessions, CSRF on every change, lockout after 5 wrong passwords per username or
+  20 per address for 15 minutes (shared by `/admin` and `/backoffice/`), the same error
+  for every failure, CSP and `noindex` on staff pages, `no-store` on staff data.
+
 Acceptance: a staff account (not superuser) can take an order from "Новый" to "Выполнен"
-and cannot open the MBANK fields for editing.
+in `/admin` and cannot open the MBANK fields for editing; a sixth login attempt is refused
+even with the right password.
 
 ### 1.5 Storefront on the real API
 
@@ -118,7 +131,7 @@ the tracking page; the MBANK option does not appear while MBANK is not configure
 
 | Decision | Why it matters | What the system does today |
 |---|---|---|
-| Delivery area: which districts of Bishkek, and is anything outside the city served | Customers outside the area will order anyway | No zones. Staff call the customer and cancel orders outside the area. |
+| Delivery area: which parts of Kyzyl-Kiya, and are nearby villages served | Customers outside the area will order anyway | No zones. Staff call the customer and cancel orders outside the area. |
 | Delivery fee and free-delivery threshold, flat or by zone | Main cost driver for small baskets | One flat fee and one threshold (demo: 150 сом, free from 2000 сом). Zones are a Phase 3 item. |
 | Minimum order amount | Very small delivery orders may lose money | Supported, on goods only (demo: 0). |
 | Opening hours, and whether online orders are taken when the shop is closed | Orders placed at night need a clear promise | Text only. Staff switch "принимать онлайн-заказы" off and on by hand. |
@@ -183,7 +196,16 @@ Options, cheapest first:
 
 Acceptance: a restore from last week's dump was done and timed.
 
-### 2.5 Monitoring, alerting, error tracking
+### 2.5 Staff account security
+
+- [ ] Two-factor login (an authenticator app) for staff and the backoffice.
+- [ ] A shared cache (for example Render Key Value) for login lockouts and rate limits
+  before running more than one web instance. Today counters are shared only inside one
+  container.
+- [ ] Alert on "Staff login blocked" log lines.
+- [ ] CSP and `noindex` headers on `/backoffice/` pages too.
+
+### 2.6 Monitoring, alerting, error tracking
 
 - [ ] External uptime check on `/api/health/` and on the storefront, alerting the developer
   and the owner.
@@ -192,7 +214,7 @@ Acceptance: a restore from last week's dump was done and timed.
 - [ ] Alert when no order has arrived during opening hours for an unusual period, which
   often means the site is broken.
 
-### 2.6 Daily operations
+### 2.7 Daily operations
 
 - [ ] Daily summary for the owner: number of orders, revenue, cancellations, unpaid MBANK
   orders.
@@ -211,8 +233,13 @@ Acceptance: a restore from last week's dump was done and timed.
 
 ## Launch checklist
 
-- [ ] Render region chosen before the first Blueprint sync. Frankfurt is closest to
-  Bishkek. A region cannot change later.
+- [x] Render region set to Frankfurt in `render.yaml`, the closest region to Kyrgyzstan.
+  A region cannot change after the first Blueprint sync.
+- [ ] Free-plan demo deployed on Render (README, "Deployment on Render").
+- [ ] Moved to paid plans before taking real orders: the free database is deleted 44 days
+  after creation and has no backups (README, "Moving to paid plans").
+- [ ] Store settings confirmed by the owner: phone and opening hours. The pickup point is
+  set to the shop's location, Plus Code 64XH+FWR, Кызыл-Кия.
 - [ ] Domain bought and pointed at Render; HTTPS works for storefront and API.
 - [ ] Environment variables set on Render: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`,
   `DJANGO_ALLOWED_HOSTS`, `DATABASE_URL`, `CORS_ALLOWED_ORIGINS`, `DB_SSLMODE`, and the
@@ -264,7 +291,7 @@ Paste this into GitHub issue #1 to replace the old checklist.
 
 ```markdown
 ## Goal
-Online ordering for Ала-Тоо Маркет (Bishkek): delivery and pickup, cash on receipt,
+Online ordering for Ала-Тоо Маркет (Kyzyl-Kiya, pickup point 64XH+FWR): delivery and pickup, cash on receipt,
 manual MBANK transfer later. Full plan: `docs/PLAN.md`.
 
 ## Phase 1 — MVP launch
@@ -273,8 +300,10 @@ manual MBANK transfer later. Full plan: `docs/PLAN.md`.
 - [x] Order tracking by secret token; enumerable `/orders/<id>/status/` removed
 - [x] Admin for staff: order actions, enforced lifecycle, stock returned on cancel, change journal
 - [x] "Store staff" permission group; payment details editable by owner only
+- [x] Staff panel at `/admin` in the web app: orders, stock and prices, pause switch; Django admin moved to `/backoffice/`
+- [x] Staff login security: one origin, `__Host-` SameSite=Strict session cookie, CSRF, password lockout, CSP
 - [x] Storefront on the real API: catalogue, cart, checkout, tracking page, demo mode, ru/ky, accessibility
-- [x] Settings hardening, WhiteNoise, Docker non-root, CI with PostgreSQL, Render static site
+- [x] Settings hardening, WhiteNoise, Docker non-root, CI with PostgreSQL, one Render service
 - [ ] Check on the live service which header carries the customer's address, and set it (README, deployment step 5)
 - [ ] Shared cache for rate limits
 - [ ] Tested on real phones and with a screen reader
@@ -288,6 +317,7 @@ manual MBANK transfer later. Full plan: `docs/PLAN.md`.
 - [ ] MBANK: real merchant details, staff checking routine, one real test payment and refund
 - [ ] CSV import/export of price and stock, with a stock change log
 - [ ] Backups outside Render + quarterly restore drill
+- [ ] Two-factor login for staff; shared cache for lockouts before scaling out
 - [ ] Uptime monitoring, error tracking, "no orders today" alert
 - [ ] Daily summary for the owner; personal data deletion routine
 

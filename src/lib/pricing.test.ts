@@ -5,7 +5,7 @@ import { computeTotals, rulesFromStore } from './pricing'
 function store(fulfillment: Partial<StoreConfig['fulfillment']> = {}): StoreConfig {
   return {
     name: 'Ала-Тоо Маркет',
-    city: 'Бишкек',
+    city: 'Кызыл-Кия',
     phone: '',
     pickup_address: '',
     opening_hours: '',

@@ -182,7 +182,7 @@ class StoreSettings(models.Model):
     SINGLETON_PK = 1
 
     name = models.CharField("название магазина", max_length=120, default="Ала-Тоо Маркет")
-    city = models.CharField("город", max_length=80, default="Бишкек")
+    city = models.CharField("город", max_length=80, default="Кызыл-Кия")
     phone = models.CharField("телефон магазина", max_length=60, blank=True)
     pickup_address = models.CharField("адрес самовывоза", max_length=255, blank=True)
     opening_hours = models.CharField("часы работы", max_length=255, blank=True)

@@ -1,14 +1,16 @@
 import type { AnchorHTMLAttributes, MouseEvent } from 'react'
-import { navigate, routeHref } from '../lib/router'
+import { navigateTo, routeHref } from '../lib/router'
 import type { Route } from '../lib/router'
 
 interface LinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> {
-  to: Route
+  /** A customer route, or a same-origin href such as "/admin/orders/AT-000123". */
+  to: Route | string
   replace?: boolean
 }
 
 /** A real link (works with middle-click and "open in new tab") that navigates in place. */
 export function Link({ to, replace, onClick, ...rest }: LinkProps) {
+  const href = typeof to === 'string' ? to : routeHref(to)
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event)
     if (
@@ -22,7 +24,7 @@ export function Link({ to, replace, onClick, ...rest }: LinkProps) {
       return
     }
     event.preventDefault()
-    navigate(to, { replace })
+    navigateTo(href, { replace })
   }
-  return <a href={routeHref(to)} onClick={handleClick} {...rest} />
+  return <a href={href} onClick={handleClick} {...rest} />
 }

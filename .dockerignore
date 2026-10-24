@@ -1,0 +1,45 @@
+# Build context for backend/Dockerfile is the repository root:
+#   docker build -f backend/Dockerfile .
+# Keep dependencies, build output, local state and secrets out of it. The image builds
+# the storefront itself, so a local dist/ or node_modules/ must never leak in.
+# Patterns follow Docker's rules: a bare name matches only at the context root.
+
+# Version control, CI and agent tooling
+.git
+.github
+.claude
+
+# Node / Vite
+**/node_modules
+dist
+dist-ssr
+**/*.tsbuildinfo
+.eslintcache
+coverage
+
+# Python
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/.ruff_cache
+**/.pytest_cache
+**/.mypy_cache
+.coverage
+htmlcov
+
+# Local state and secrets. backend/.env turns on debug mode: it must never ship.
+**/.env
+**/.env.*
+**/*.sqlite3
+**/*.sqlite3-journal
+backend/staticfiles
+backend/media
+**/*.log
+
+# Documentation and editor files
+docs
+**/*.md
+.idea
+.vscode
+**/.DS_Store

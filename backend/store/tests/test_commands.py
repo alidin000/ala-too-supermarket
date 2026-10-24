@@ -47,7 +47,8 @@ class SeedDemoTests(TestCase):
             ("150.00", "2000.00", "0.00"),
         )
         self.assertFalse(store.mbank_configured)
-        self.assertEqual((store.phone, store.pickup_address, store.mbank_phone), ("", "", ""))
+        self.assertEqual((store.phone, store.mbank_phone), ("", ""))
+        self.assertEqual(store.pickup_address, "64XH+FWR, Кызыл-Кия")
 
     @override_settings(DEBUG=True)
     def test_seeded_catalogue_is_searchable_in_cyrillic(self):

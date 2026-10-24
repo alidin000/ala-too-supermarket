@@ -61,12 +61,13 @@ PRODUCTS = [
     ),
 ]
 
-# No contact details, no address and no MBANK details: nothing fake may look real.
+# Nothing invented may look real: no phone, no hours and no MBANK details until the owner
+# confirms them. The pickup point is the shop's real location (Google Maps Plus Code).
 DEMO_STORE = {
     "name": "Ала-Тоо Маркет",
-    "city": "Бишкек",
+    "city": "Кызыл-Кия",
     "phone": "",
-    "pickup_address": "",
+    "pickup_address": "64XH+FWR, Кызыл-Кия",
     "opening_hours": "",
     "is_accepting_orders": True,
     "delivery_enabled": True,

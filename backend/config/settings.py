@@ -1,4 +1,7 @@
-"""Django settings for the Ala-Too Supermarket API.
+"""Django settings for Ala-Too Supermarket: the API, the staff panel and the storefront.
+
+One Django service serves everything on one origin: the built storefront (``dist/``), the
+JSON API under ``/api/`` and the owner's Django admin under ``DJANGO_ADMIN_PATH``.
 
 All configuration comes from environment variables. The defaults are the safe ones:
 DEBUG is off, and with DEBUG off the app refuses to start without a real secret key.
@@ -8,6 +11,8 @@ loaded below; variables already set in the real environment always win over it.
 The root README lists every variable.
 """
 
+import re
+import tempfile
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -21,6 +26,7 @@ from config.env import (
     env_rate,
     env_str,
 )
+from config.frontend import add_frontend_file_headers, is_immutable_file
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -67,7 +73,8 @@ if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
 # --- Applications ---------------------------------------------------------------------
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # Django admin with the store's AdminSite: its login shares the staff login lockout.
+    "config.apps.StoreAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -97,6 +104,19 @@ MIDDLEWARE = [
 CLIENT_IP_HEADER = env_str("CLIENT_IP_HEADER")
 if CLIENT_IP_HEADER:
     MIDDLEWARE.insert(0, "config.middleware.TrustedClientIPMiddleware")
+
+# The owner's Django admin ("backoffice"). /admin belongs to the storefront's staff panel,
+# so the admin lives elsewhere. A relative URL prefix ending in "/".
+DJANGO_ADMIN_PATH = env_str("DJANGO_ADMIN_PATH", "backoffice/")
+_RESERVED_FIRST_SEGMENTS = {"admin", "api", "static", "assets"}
+if not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9._~-]*/)+", DJANGO_ADMIN_PATH) or (
+    DJANGO_ADMIN_PATH.split("/", 1)[0].lower() in _RESERVED_FIRST_SEGMENTS
+):
+    raise ImproperlyConfigured(
+        "DJANGO_ADMIN_PATH must be a relative path that ends with '/', such as "
+        "'backoffice/'. It cannot start with admin/ (the staff panel), api/, static/ or "
+        f"assets/. Got {DJANGO_ADMIN_PATH!r}."
+    )
 
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
@@ -167,12 +187,60 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
-# --- Cross-origin requests from the storefront ----------------------------------------
+# --- The built storefront (Vite's dist/), served by WhiteNoise and config.views ---------
 
+# Files in this folder are served at the site root (/assets/..., /favicon.svg, ...).
+# Every other page path gets its index.html from config.views.spa_index.
+FRONTEND_DIST_DIR = Path(env_str("FRONTEND_DIST_DIR") or BASE_DIR.parent / "dist")
+WHITENOISE_ROOT = FRONTEND_DIST_DIR
+# Vite's hashed /assets/name-HASH.ext and Django's hashed admin files never change:
+# browsers may cache them for a year. index.html must always be revalidated.
+WHITENOISE_IMMUTABLE_FILE_TEST = is_immutable_file
+WHITENOISE_ADD_HEADERS_FUNCTION = add_frontend_file_headers
+
+# --- Sessions and CSRF (staff panel and Django admin) ---------------------------------
+
+# The staff panel and the API share one origin, so the cookies never need to travel
+# cross-site. Strict keeps them off every request another site starts.
+SESSION_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_SAMESITE = "Strict"
+# The staff app receives the CSRF token in JSON (GET /api/staff/session/), so no
+# JavaScript needs to read the cookie.
+CSRF_COOKIE_HTTPONLY = True
+# A staff session lasts one working day; then the staff member logs in again.
+SESSION_COOKIE_AGE = env_int("DJANGO_SESSION_COOKIE_AGE", 12 * 60 * 60, minimum=300)
+
+# --- Caches -----------------------------------------------------------------------------
+
+# "default": per-process memory, for DRF rate limits (as Django's own default).
+# "login_lockout": failed staff logins (store/staff/lockout.py). Each gunicorn worker is a
+# separate process, so in-memory counters would let every worker allow its own 5 guesses.
+# Files in a local folder are shared by all workers of one container. They are not shared
+# between instances and start empty after a deploy (see the README's security notes).
+LOGIN_LOCKOUT_CACHE_DIR = env_str(
+    "LOGIN_LOCKOUT_CACHE_DIR", str(Path(tempfile.gettempdir()) / "ala-too-login-lockout")
+)
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "login_lockout": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": LOGIN_LOCKOUT_CACHE_DIR,
+        "TIMEOUT": 15 * 60,
+        # Above MAX_ENTRIES the backend deletes random entries. Keep it far above any
+        # normal number of counters so a flood of usernames cannot evict a real one.
+        "OPTIONS": {"MAX_ENTRIES": 10_000},
+    },
+}
+
+# --- Cross-origin requests --------------------------------------------------------------
+
+# The storefront is served from the same origin, so CORS is only for a storefront hosted
+# elsewhere. Never for the staff API, whose session cookie must stay same-origin.
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS",
     ["http://localhost:5173", "http://127.0.0.1:5173"] if DEBUG else [],
 )
+CORS_URLS_REGEX = r"^/api/(?!staff/).*$"
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
@@ -187,6 +255,10 @@ if not DEBUG:
     SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    # Browsers accept a __Host- cookie only if it is Secure, has Path=/ and no Domain, so
+    # no subdomain or plain-HTTP page can set or overwrite it.
+    SESSION_COOKIE_NAME = "__Host-sessionid"
+    CSRF_COOKIE_NAME = "__Host-csrftoken"
     SECURE_HSTS_SECONDS = env_int("DJANGO_SECURE_HSTS_SECONDS", 60 * 60 * 24 * 30)
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     # HSTS preload is an opt-in promise for a whole registered domain. Leave it off until
@@ -197,6 +269,10 @@ if not DEBUG:
 # --- Django REST framework --------------------------------------------------------------
 
 REST_FRAMEWORK = {
+    # No authentication unless a view asks for it. The staff API opts into its own session
+    # authentication. DRF's default would also accept HTTP Basic passwords on every view,
+    # which would bypass the staff login lockout.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     # The browsable HTML API is a debugging aid; production speaks JSON only.
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"]

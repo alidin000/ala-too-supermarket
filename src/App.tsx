@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { AnnouncerProvider } from './a11y/Announcer'
 import { IS_MOCK } from './api'
 import { CartProvider } from './cart/CartProvider'
@@ -11,24 +11,49 @@ import { Header } from './components/Header'
 import { StoreConfigProvider } from './config/StoreConfigProvider'
 import { useI18n } from './i18n/context'
 import { I18nProvider } from './i18n/I18nProvider'
-import { lastNavigationKind, navigate, useRoute } from './lib/router'
+import { isStaffPath, lastNavigationKind, navigate, usePathname, useRoute } from './lib/router'
 import type { Route } from './lib/router'
 import { CatalogPage } from './pages/CatalogPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { OrderPage } from './pages/OrderPage'
 import { OrdersPage } from './pages/OrdersPage'
 
+// The staff panel (/admin) is a separate chunk: customers never download it.
+const StaffApp = lazy(() => import('./staff/StaffApp'))
+
 export default function App() {
+  const staff = isStaffPath(usePathname())
   return (
-    <I18nProvider>
+    // The staff panel is Russian-only; the customer's saved language choice is kept.
+    <I18nProvider lockedLang={staff ? 'ru' : undefined}>
       <AnnouncerProvider>
-        <StoreConfigProvider>
-          <CartProvider>
-            <Shell />
-          </CartProvider>
-        </StoreConfigProvider>
+        {staff ? (
+          <ErrorBoundary resetKey="staff">
+            <Suspense fallback={<PanelLoading />}>
+              <StaffApp />
+            </Suspense>
+          </ErrorBoundary>
+        ) : (
+          <StoreConfigProvider>
+            <CartProvider>
+              <Shell />
+            </CartProvider>
+          </StoreConfigProvider>
+        )}
       </AnnouncerProvider>
     </I18nProvider>
+  )
+}
+
+function PanelLoading() {
+  const { t } = useI18n()
+  return (
+    <div className="container page" aria-busy="true">
+      <span className="visually-hidden" role="status">
+        {t('catalog.loadingMore')}
+      </span>
+      <span className="skeleton skeleton--block" />
+    </div>
   )
 }
 

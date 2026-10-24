@@ -17,8 +17,15 @@ function initialLang(): Lang {
   return isLang(stored) ? stored : DEFAULT_LANG
 }
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(initialLang)
+interface I18nProviderProps {
+  children: ReactNode
+  /** Forces one language (the staff panel is Russian-only) without changing the saved choice. */
+  lockedLang?: Lang
+}
+
+export function I18nProvider({ children, lockedLang }: I18nProviderProps) {
+  const [chosenLang, setLangState] = useState<Lang>(initialLang)
+  const lang = lockedLang ?? chosenLang
 
   useEffect(() => {
     document.documentElement.lang = lang

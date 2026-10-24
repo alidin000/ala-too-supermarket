@@ -10,138 +10,45 @@
  *   ?mock=mbank          MBANK transfer is "configured" with obviously fake details
  *   ?mock=paged          4 products per page, to show "Показать ещё"
  *   ?mock=fast           no simulated latency
+ *   ?mock=csrf           (staff panel) the next POST/PATCH meets a rotated CSRF token
  *   ?mock=reset          forget demo orders and restore stock
  *   ?mock=off            turn every switch off
  * Combine them with commas, for example ?mock=paged,mbank
+ *
+ * The staff panel's mock (src/staff/mock/) shares this database: orders placed here show
+ * up on its board, and its price, stock, visibility and "pause orders" edits show up here.
+ * Once the staff panel has been opened, order statuses change only through it.
  */
 import { normalizeKgPhone } from '../../lib/phone'
-import { readJson, readStorage, writeStorage } from '../../lib/storage'
-import { abortError, ApiError } from '../errors'
+import { ApiError } from '../errors'
 import type { FieldErrors } from '../errors'
-import type {
-  Api,
-  Category,
-  Order,
-  OrderCreateInput,
-  OrderStatus,
-  Page,
-  Product,
-  ProductQuery,
-} from '../types'
+import type { Api, Category, Order, OrderCreateInput, Page, Product, ProductQuery } from '../types'
 import { MOCK_CATEGORIES, MOCK_PRODUCTS, mockStoreConfig } from './data'
 import type { MockProduct } from './data'
-
-const DB_KEY = 'ala-too:mock-db:v1'
-const FLAGS_KEY = 'ala-too:mock-flags'
-const ONE_SHOT = new Set(['fail-products', 'throttle', 'offline'])
-
-interface StoredOrder extends Order {
-  token: string
-  idempotency_key: string
-  payment_reference: string
-  reported_at: string | null
-}
-
-interface MockDb {
-  seq: number
-  stock: Record<string, number>
-  orders: StoredOrder[]
-}
-
-// --- Switches -----------------------------------------------------------------------------
-
-function readFlags(): Set<string> {
-  const stored = readStorage(FLAGS_KEY, 'session')
-  return new Set(stored ? stored.split(',').filter(Boolean) : [])
-}
-
-function writeFlags(flags: Set<string>): void {
-  writeStorage(FLAGS_KEY, flags.size > 0 ? [...flags].join(',') : null, 'session')
-}
-
-function initFlags(): void {
-  const requested = new URLSearchParams(window.location.search).get('mock')
-  if (!requested) return
-  const flags = readFlags()
-  for (const flag of requested.split(',').map((value) => value.trim())) {
-    if (flag === 'off') flags.clear()
-    else if (flag === 'reset') writeStorage(DB_KEY, null)
-    else if (flag) flags.add(flag)
-  }
-  writeFlags(flags)
-}
-
-const hasFlag = (flag: string) => readFlags().has(flag)
-
-/** Fires a one-shot switch: returns true once, then turns it off. */
-function consumeFlag(flag: string): boolean {
-  const flags = readFlags()
-  if (!flags.has(flag)) return false
-  if (ONE_SHOT.has(flag)) {
-    flags.delete(flag)
-    writeFlags(flags)
-  }
-  return true
-}
-
-// --- Storage ------------------------------------------------------------------------------
-
-function freshDb(): MockDb {
-  const stock: Record<string, number> = {}
-  for (const product of MOCK_PRODUCTS) stock[product.id] = product.stock
-  return { seq: 120, stock, orders: [] }
-}
-
-function loadDb(): MockDb {
-  const data = readJson(DB_KEY) as Partial<MockDb> | null
-  if (!data || typeof data.seq !== 'number' || !data.stock || !Array.isArray(data.orders)) {
-    return freshDb()
-  }
-  return { seq: data.seq, stock: data.stock, orders: data.orders }
-}
-
-function saveDb(db: MockDb): void {
-  writeStorage(DB_KEY, JSON.stringify(db))
-}
+import {
+  consumeFlag,
+  effectiveProduct,
+  hasFlag,
+  initFlags,
+  loadDb,
+  minorOf,
+  money,
+  randomToken,
+  saveDb,
+  sleep,
+  withLiveStatus,
+} from './shared'
+import type { MockDb, StoredOrder } from './shared'
 
 // --- Helpers ------------------------------------------------------------------------------
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(abortError())
-      return
-    }
-    const timer = window.setTimeout(resolve, ms)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        window.clearTimeout(timer)
-        reject(abortError())
-      },
-      { once: true },
-    )
-  })
-}
 
 async function simulateNetwork(signal?: AbortSignal): Promise<void> {
   if (!hasFlag('fast')) await sleep(250 + Math.random() * 450, signal)
   if (consumeFlag('offline')) throw new ApiError('network', 0, { message: 'Failed to fetch' })
 }
 
-const money = (minor: number) => (minor / 100).toFixed(2)
-const minorOf = (value: string) => Math.round(Number(value) * 100)
-
-function randomToken(): string {
-  const bytes = new Uint8Array(24)
-  crypto.getRandomValues(bytes)
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-}
-
-function toProduct(product: MockProduct, db: MockDb): Product {
+function toProduct(base: MockProduct, db: MockDb): Product {
+  const product = effectiveProduct(base, db)
   const stock = db.stock[product.id] ?? 0
   const category = MOCK_CATEGORIES.find((row) => row.id === product.category)
   return {
@@ -176,30 +83,6 @@ function descendantIds(categoryId: number): Set<number> {
   return ids
 }
 
-const STEPS: Record<Order['fulfillment'], OrderStatus[]> = {
-  delivery: ['new', 'confirmed', 'preparing', 'out_for_delivery', 'completed'],
-  pickup: ['new', 'confirmed', 'preparing', 'ready', 'completed'],
-}
-// Seconds after creation at which the demo order moves to the next status.
-const STEP_AFTER_S = [0, 20, 60, 120, 600]
-
-/** Demo orders move along on their own, so the order page has something to poll. */
-function withLiveStatus(order: StoredOrder): StoredOrder {
-  if (order.status === 'cancelled') return order
-  const ageS = (Date.now() - new Date(order.created_at).getTime()) / 1000
-  const steps = STEPS[order.fulfillment]
-  let index = 0
-  STEP_AFTER_S.forEach((after, step) => {
-    if (ageS >= after) index = step
-  })
-  let paymentStatus = order.payment_status
-  if (paymentStatus === 'pending' && order.reported_at) {
-    const sinceReportS = (Date.now() - new Date(order.reported_at).getTime()) / 1000
-    if (sinceReportS > 30) paymentStatus = 'paid'
-  }
-  return { ...order, status: steps[index] ?? order.status, payment_status: paymentStatus }
-}
-
 function publicOrder(order: StoredOrder): Order {
   const live = withLiveStatus(order)
   return {
@@ -229,7 +112,11 @@ function validationError(fieldErrors: FieldErrors): ApiError {
 
 export function createMockApi(): Api {
   initFlags()
-  const store = () => mockStoreConfig({ closed: hasFlag('closed'), mbank: hasFlag('mbank') })
+  const store = () =>
+    mockStoreConfig({
+      closed: hasFlag('closed') || Boolean(loadDb().staff?.paused),
+      mbank: hasFlag('mbank'),
+    })
 
   return {
     async getStore(signal) {
@@ -239,7 +126,8 @@ export function createMockApi(): Api {
 
     async getCategories(signal) {
       await simulateNetwork(signal)
-      const products = MOCK_PRODUCTS
+      const db = loadDb()
+      const products = MOCK_PRODUCTS.filter((product) => effectiveProduct(product, db).is_active)
       return MOCK_CATEGORIES.map((row): Category => ({
         ...row,
         product_count: products.filter((product) => descendantIds(row.id).has(product.category))
@@ -253,7 +141,10 @@ export function createMockApi(): Api {
         throw new ApiError('server', 500, { message: 'Demo server error' })
       }
       const db = loadDb()
-      let rows = MOCK_PRODUCTS.map((product) => toProduct(product, db))
+      // Products hidden in the staff panel are not on sale.
+      let rows = MOCK_PRODUCTS.filter((product) => effectiveProduct(product, db).is_active).map(
+        (product) => toProduct(product, db),
+      )
       if (query.category) {
         const category = MOCK_CATEGORIES.find((row) => row.slug === query.category)
         const ids = category ? descendantIds(category.id) : new Set<number>()
@@ -332,8 +223,9 @@ export function createMockApi(): Api {
       let subtotal = 0
       const lines: Order['items'] = []
       for (const item of input.items) {
-        const product = MOCK_PRODUCTS.find((row) => row.id === item.product_id)
-        if (!product) {
+        const base = MOCK_PRODUCTS.find((row) => row.id === item.product_id)
+        const product = base ? effectiveProduct(base, db) : undefined
+        if (!product || !product.is_active) {
           itemErrors.push(`Товар #${item.product_id} больше не продаётся.`)
           continue
         }
@@ -393,6 +285,10 @@ export function createMockApi(): Api {
         updated_at: now,
         payment_reference: '',
         reported_at: null,
+        // With the staff panel in use, staff move the order along, not a timer.
+        staff_managed: Boolean(db.staff),
+        staff_note: '',
+        events: [{ at: now, kind: 'created', from: null, to: 'new', actor: null, message: '' }],
       }
       for (const item of input.items) {
         db.stock[item.product_id] = (db.stock[item.product_id] ?? 0) - item.quantity
@@ -427,6 +323,17 @@ export function createMockApi(): Api {
         throw validationError({ non_field_errors: ['Сейчас нельзя сообщить об оплате.'] })
       }
       const now = new Date().toISOString()
+      stored.events = [
+        ...(stored.events ?? []),
+        {
+          at: now,
+          kind: 'payment_reported',
+          from: live.payment_status,
+          to: 'pending',
+          actor: null,
+          message: reference.trim(),
+        },
+      ]
       stored.payment_status = 'pending'
       stored.payment_reference = reference.trim()
       stored.reported_at = now

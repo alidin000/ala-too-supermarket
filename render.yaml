@@ -1,25 +1,40 @@
-# Render Blueprint: the Django API, its PostgreSQL database and the React storefront.
+# Render Blueprint: one Docker web service and its PostgreSQL database, on the FREE plan.
+# The web service serves everything on one origin: the storefront, the staff panel at
+# /admin, the API at /api/ and the owner's Django admin at /backoffice/.
 # Spec: https://render.com/docs/blueprint-spec
 # Schema for editors and CI: https://render.com/schema/render.yaml.json
 #
-# No `region` is set on purpose. A region cannot change after a service or database is
-# created, and these may already exist. New resources default to Oregon. If nothing has
-# been created yet, add `region: frankfurt` (closer to Bishkek) to the API service and
-# the database before the first Blueprint sync. The static site is served from a CDN and
-# has no region.
+# Free plan limits (https://render.com/docs/free), fine for a demo, not for a real shop:
+# - the web service sleeps after 15 minutes without visitors; the next visit waits ~1 min;
+# - the free database expires 30 days after creation (14 more days to upgrade, then it is
+#   deleted) and has no backups;
+# - no pre-deploy step and no shell, so backend/start.sh migrates, creates the first owner
+#   account and loads the demo catalogue when the container starts.
+# To go live, see "Moving to paid plans" in the root README.
+#
+# Region: Frankfurt is the closest Render region to Kyrgyzstan. A region cannot change
+# after a service or database is created.
 
 services:
   - type: web
-    name: ala-too-supermarket-api
+    name: ala-too-supermarket
     runtime: docker
-    rootDir: backend
-    plan: starter
+    plan: free
+    region: frankfurt
+    # The image builds the storefront too, so the build context is the repository root.
+    # Both paths are relative to the repository root (no rootDir is set).
+    dockerContext: .
+    dockerfilePath: ./backend/Dockerfile
     healthCheckPath: /api/health/
-    # Runs on the new image before it takes traffic. If a migration fails, the deploy is
-    # cancelled and the previous version keeps serving. Needs a paid instance type.
-    preDeployCommand: python manage.py migrate --noinput
-    # Deploy only after every GitHub Actions check on the commit has passed.
+    # Deploy only after every GitHub Actions check on the commit has passed. CI runs on
+    # pushes to main and on pull requests, so deploy from main.
     autoDeployTrigger: checksPass
+    # Changes that cannot affect the image do not trigger a deploy.
+    buildFilter:
+      ignoredPaths:
+        - docs/**
+        - '**/*.md'
+        - .github/**
     envVars:
       - key: DJANGO_DEBUG
         value: '0'
@@ -28,11 +43,9 @@ services:
       # Only custom domains. The onrender.com host name is added automatically.
       - key: DJANGO_ALLOWED_HOSTS
         sync: false
-      # https:// origins of custom domains for Django admin. onrender.com is automatic.
+      # https:// origins of custom domains (for logins and admin forms). onrender.com is
+      # added automatically.
       - key: CSRF_TRUSTED_ORIGINS
-        sync: false
-      # The storefront's https:// origin, e.g. https://ala-too-supermarket-web.onrender.com
-      - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: DATABASE_URL
         fromDatabase:
@@ -40,49 +53,34 @@ services:
           property: connectionString
       - key: DB_SSLMODE
         value: require
-      # Render's proxy appends the client address to X-Forwarded-For.
+      # Render's proxy appends the client address to X-Forwarded-For. Rate limits and the
+      # staff login lockout use it. Check it once after the first deploy (README).
       - key: DRF_NUM_PROXIES
         value: '1'
-      # gunicorn worker processes (each runs GUNICORN_THREADS threads, default 4).
+      # Free instances have 512 MB of memory: one gunicorn process with 4 threads.
       - key: WEB_CONCURRENCY
-        value: '2'
-
-  - type: web
-    name: ala-too-supermarket-web
-    runtime: static
-    # --include=dev: Vite and TypeScript are devDependencies and are needed to build.
-    buildCommand: npm ci --include=dev && npm run build
-    staticPublishPath: ./dist
-    autoDeployTrigger: checksPass
-    buildFilter:
-      ignoredPaths:
-        - backend/**
-    routes:
-      # Single-page app: unknown paths load index.html. Existing files are served first.
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: DENY
-      - path: /*
-        name: Referrer-Policy
-        value: strict-origin-when-cross-origin
-      # Vite puts a content hash in every file name under /assets/.
-      - path: /assets/*
-        name: Cache-Control
-        value: public, max-age=31536000, immutable
-    envVars:
-      - key: NODE_VERSION
-        value: '22'
-      # Full API base URL, e.g. https://ala-too-supermarket-api.onrender.com/api
-      - key: VITE_API_BASE_URL
+        value: '1'
+      # No pre-deploy step on the free plan: migrate when the container starts.
+      - key: DJANGO_MIGRATE_ON_START
+        value: '1'
+      # The first owner account, created only if it does not exist. Render asks for both
+      # when the Blueprint is created. Use a strong password and change it after the first
+      # login in /backoffice/; the account is never overwritten afterwards.
+      - key: DJANGO_SUPERUSER_USERNAME
         sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      # Demo catalogue (fake products and prices), loaded only into an empty database.
+      # Remove this variable before loading the real catalogue.
+      - key: DJANGO_SEED_DEMO
+        value: '1'
+      # Optional, set in the dashboard when needed (see the root README):
+      # DJANGO_ADMIN_PATH (default backoffice/), DJANGO_SESSION_COOKIE_AGE (default 12 h),
+      # CLIENT_IP_HEADER, DJANGO_SUPERUSER_EMAIL.
 
 databases:
   - name: ala-too-supermarket-db
-    plan: basic-256mb
+    plan: free
+    region: frankfurt
+    # Only the web service connects, over Render's private network. No outside access.
+    ipAllowList: []

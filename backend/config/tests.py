@@ -10,6 +10,7 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 from unittest import mock
@@ -45,6 +46,10 @@ PRODUCTION_ENV = {
     "DRF_ANON_THROTTLE_RATE": "",
     "DJANGO_SECURE_HSTS_SECONDS": "",
     "DJANGO_LOG_LEVEL": "",
+    "DJANGO_ADMIN_PATH": "",
+    "DJANGO_SESSION_COOKIE_AGE": "",
+    "FRONTEND_DIST_DIR": "",
+    "LOGIN_LOCKOUT_CACHE_DIR": "",
 }
 
 
@@ -202,6 +207,14 @@ class StartupSafetyTests(SimpleTestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
+    def test_refuses_an_admin_path_that_collides_with_the_site(self):
+        for value in ("admin/", "Admin/orders/", "api/backoffice/", "static/x/", "backoffice"):
+            with self.subTest(value=value):
+                self.assert_refuses("DJANGO_ADMIN_PATH", DJANGO_ADMIN_PATH=value)
+        for value in ("/backoffice/", "../x/", "a b/"):
+            with self.subTest(value=value):
+                self.assert_refuses("DJANGO_ADMIN_PATH", DJANGO_ADMIN_PATH=value)
+
 
 class ProductionRequestTests(SimpleTestCase):
     """Requests handled with production settings, as Render's proxy delivers them."""
@@ -212,7 +225,7 @@ class ProductionRequestTests(SimpleTestCase):
             from django.test import Client
             c = Client(HTTP_HOST="api.example.com")
             probe = c.get("/api/health/")
-            admin = c.get("/admin/login/")
+            admin = c.get("/backoffice/login/")
             via_proxy = c.get("/api/health/", HTTP_X_FORWARDED_PROTO="https")
             print(json.dumps({
                 "probe": probe.status_code,
@@ -226,9 +239,93 @@ class ProductionRequestTests(SimpleTestCase):
 
         self.assertEqual(result["probe"], 200)
         self.assertEqual(result["admin"], 301)
-        self.assertEqual(result["admin_location"], "https://api.example.com/admin/login/")
+        self.assertEqual(result["admin_location"], "https://api.example.com/backoffice/login/")
         self.assertEqual(result["proxied"], 200)
         self.assertIn("max-age=", result["hsts"] or "")
+
+    def test_staff_login_cookies_are_host_only_secure_and_strict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_script(
+                """
+                from django.contrib.auth import get_user_model
+                from django.core.management import call_command
+                from django.test import Client
+
+                call_command("migrate", verbosity=0)
+                get_user_model().objects.create_user(
+                    "aigul", password="Kyz-Kumush-2026-pass", is_staff=True
+                )
+                c = Client(
+                    HTTP_HOST="api.example.com",
+                    HTTP_X_FORWARDED_PROTO="https",
+                    enforce_csrf_checks=True,
+                )
+                token = c.get("/api/staff/session/").json()["csrf_token"]
+                login = c.post(
+                    "/api/staff/login/",
+                    {"username": "aigul", "password": "Kyz-Kumush-2026-pass"},
+                    content_type="application/json",
+                    HTTP_X_CSRFTOKEN=token,
+                    HTTP_ORIGIN="https://api.example.com",
+                )
+                attributes = ("secure", "httponly", "samesite", "path", "domain", "max-age")
+                print(json.dumps({
+                    "status": login.status_code,
+                    "cookies": {
+                        name: {key: morsel[key] for key in attributes}
+                        for name, morsel in login.cookies.items()
+                    },
+                    "logged_in": c.get("/api/staff/session/").json()["authenticated"],
+                }))
+                """,
+                DATABASE_URL=f"sqlite:///{tmp}/staff.sqlite3",
+            )
+
+        self.assertEqual(result["status"], 200)
+        self.assertEqual(sorted(result["cookies"]), ["__Host-csrftoken", "__Host-sessionid"])
+        for name, cookie in result["cookies"].items():
+            with self.subTest(cookie=name):
+                self.assertIs(cookie["secure"], True)
+                self.assertIs(cookie["httponly"], True)
+                self.assertEqual(cookie["samesite"], "Strict")
+                self.assertEqual((cookie["path"], cookie["domain"]), ("/", ""))
+        self.assertEqual(result["cookies"]["__Host-sessionid"]["max-age"], 12 * 60 * 60)
+        self.assertTrue(result["logged_in"])
+
+    def test_failed_logins_are_counted_across_worker_processes(self):
+        # Each child process stands in for one gunicorn worker.
+        script = """
+            from store.staff import lockout
+            for _ in range({failures}):
+                lockout.record_failure("aigul", "203.0.113.7", "test")
+            print(json.dumps(lockout.is_locked("aigul", "203.0.113.7")))
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            first = run_script(script.format(failures=3), LOGIN_LOCKOUT_CACHE_DIR=tmp)
+            second = run_script(script.format(failures=2), LOGIN_LOCKOUT_CACHE_DIR=tmp)
+            elsewhere = run_script(script.format(failures=0), LOGIN_LOCKOUT_CACHE_DIR=tmp + "-x")
+
+        self.assertEqual((first, second, elsewhere), (False, True, False))
+
+    def test_admin_path_is_configurable(self):
+        # Redirects only: rendering an admin page needs collectstatic's manifest.
+        result = run_script(
+            """
+            from django.test import Client
+            c = Client(HTTP_HOST="api.example.com", HTTP_X_FORWARDED_PROTO="https")
+            admin, bare = c.get("/kontora/"), c.get("/kontora")
+            print(json.dumps({
+                "admin": [admin.status_code, admin["Location"]],
+                "bare": [bare.status_code, bare["Location"]],
+                "old_path_is_a_page": c.get("/backoffice/").status_code in (200, 503),
+            }))
+            """,
+            DJANGO_ADMIN_PATH="kontora/",
+        )
+
+        self.assertEqual(result["admin"], [302, "/kontora/login/?next=/kontora/"])
+        self.assertEqual(result["bare"], [301, "/kontora/"])
+        self.assertTrue(result["old_path_is_a_page"])
 
     def test_render_hostname_is_allowed_and_unknown_hosts_are_not(self):
         result = run_script(

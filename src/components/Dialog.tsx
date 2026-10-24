@@ -22,17 +22,31 @@ interface DialogProps {
   onClose: () => void
   labelledBy: string
   className?: string
+  /**
+   * The page behind the dialog, made `inert` while it is open. Use it when the dialog is
+   * rendered from inside that page, where the caller cannot toggle `inert` in time to give
+   * focus back to the opener. Callers outside the page set `inert` themselves.
+   */
+  inertTarget?: () => HTMLElement | null
   children: ReactNode
 }
 
 /**
  * Modal dialog: focus moves in and is trapped, Esc and the backdrop close it, the page
  * behind cannot scroll, and focus returns to the element that opened it. The app shell is
- * made `inert` by the caller while the dialog is open.
+ * made `inert` by the caller (or via `inertTarget`) while the dialog is open.
  */
-export function Dialog({ open, onClose, labelledBy, className, children }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  labelledBy,
+  className,
+  inertTarget,
+  children,
+}: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const requestClose = useEffectEvent(() => onClose())
+  const readInertTarget = useEffectEvent(() => inertTarget?.() ?? null)
 
   // A layout effect: it must read the opener before the inert shell loses focus.
   useLayoutEffect(() => {
@@ -41,6 +55,10 @@ export function Dialog({ open, onClose, labelledBy, className, children }: Dialo
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const first = panel.querySelector<HTMLElement>('[data-autofocus]') ?? focusableIn(panel)[0]
     ;(first ?? panel).focus()
+
+    const background = readInertTarget()
+    const backgroundWasInert = background?.inert ?? false
+    if (background) background.inert = true
 
     const { body, documentElement } = document
     const scrollbarWidth = window.innerWidth - documentElement.clientWidth
@@ -95,6 +113,7 @@ export function Dialog({ open, onClose, labelledBy, className, children }: Dialo
       document.removeEventListener('keydown', onKeyDown)
       body.style.overflow = previousOverflow
       body.style.paddingRight = previousPadding
+      if (background) background.inert = backgroundWasInert
       if (opener?.isConnected) opener.focus({ preventScroll: true })
     }
   }, [open])

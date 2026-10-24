@@ -1,8 +1,15 @@
 # Ala-Too Supermarket API
 
-Django 5.2 + Django REST Framework backend for the Ала-Тоо Маркет online store in Bishkek.
-It serves the storefront API (contract v1) and the Django admin that shop staff use to
-process orders. SQLite is used locally; PostgreSQL is used when `DATABASE_URL` is set.
+Django 5.2 + Django REST Framework backend for the Ала-Тоо Маркет online store in Kyzyl-Kiya (Batken region), Kyrgyzstan.
+It serves, all on one origin:
+
+- the public storefront API (contract v1) under `/api/`;
+- the staff API under `/api/staff/`, used by the staff panel at `/admin` in the storefront app;
+- the owner's Django admin at `/backoffice/` (`DJANGO_ADMIN_PATH`);
+- the built storefront itself (`dist/`): files through WhiteNoise, every page path as
+  `index.html` (see "Serving the storefront" below).
+
+SQLite is used locally; PostgreSQL is used when `DATABASE_URL` is set.
 
 - Customers order without an account. They pay cash on receipt. A manual MBANK transfer is
   built in but stays hidden until the owner enters real merchant details.
@@ -25,8 +32,10 @@ cd backend
 ../.venv/bin/python manage.py runserver
 ```
 
-- Admin: <http://127.0.0.1:8000/admin/>
+- Django admin (owner): <http://127.0.0.1:8000/backoffice/>
 - API root: `http://127.0.0.1:8000/api/`
+- Staff panel: run the Vite dev server (`npm run dev` in the repository root) and open
+  <http://localhost:5173/admin>. It proxies `/api` here.
 
 Environment variables are listed in `backend/.env.example`. Settings live in
 `config/settings.py`.
@@ -34,9 +43,12 @@ Environment variables are listed in `backend/.env.example`. Settings live in
 ## API (contract v1)
 
 Base path `/api/`. JSON only. Money is always a string with 2 decimals (`"85.00"`, KGS).
-Timestamps are ISO 8601 in Bishkek time (`+06:00`). Validation errors use DRF's shape
+Timestamps are ISO 8601 in Kyrgyzstan time (`Asia/Bishkek`, `+06:00`). Validation errors use DRF's shape
 `{"field": ["message", ...]}`, with `non_field_errors` for whole-request problems. Messages
-are in Russian. Every endpoint is anonymous (no session or token auth).
+are in Russian. Every public endpoint is anonymous (no session or token auth), so a staff
+member logged in on the same browser never hits CSRF checks while shopping. The staff API
+is described in its own section below. An unknown path under `/api/` returns
+`404 {"detail": "Не найдено."}`, never the storefront page.
 
 | Method | Path | Purpose | Throttle (per client IP) |
 |---|---|---|---|
@@ -58,7 +70,7 @@ The rates are the defaults in `store/throttles.py`. A rate in
 ```json
 {
   "name": "Ала-Тоо Маркет",
-  "city": "Бишкек",
+  "city": "Кызыл-Кия",
   "phone": "",
   "pickup_address": "",
   "opening_hours": "",
@@ -278,22 +290,209 @@ paid     ──(staff: money returned)──────────► refunded
 
 Payment is tracked only in `payment_status`. The old `payment_review` order status is gone.
 
-## Admin workflow for staff
+## Staff API (`/api/staff/`)
 
-The owner logs in as superuser. Each staff member gets a personal account in the
-"Store staff" group, never a shared login and never superuser. Create the user in Admin →
-Пользователи → Добавить, then:
+The staff panel at `/admin` in the storefront app uses these endpoints. Code:
+`store/staff/`. Every order change goes through `store/services.py`, exactly like the
+Django admin, so the lifecycle rules, stock restore and the order journal are shared.
+
+### Login, CSRF and errors
+
+- **Login** is Django's session (cookie). Only users who are `is_active` and `is_staff`
+  count as logged in; anyone else gets `401 {"detail": "Войдите в систему."}` on every
+  endpoint except `session/`, `login/` and `logout/`.
+- **Permissions** are Django model permissions. A logged-in staff user without the one an
+  endpoint needs gets `403 {"detail": "Недостаточно прав."}`. The "Store staff" group
+  (`setup_staff_group`) has all five; superusers have everything.
+
+  | Name in the API   | Django permission    | Needed for                                    |
+  | ----------------- | -------------------- | --------------------------------------------- |
+  | `view_orders`     | `store.view_order`   | order list, counts, detail; `GET store/`      |
+  | `change_orders`   | `store.change_order` | status, payment, cancel, `PATCH orders/<n>/`  |
+  | `view_products`   | `store.view_product` | product list                                  |
+  | `change_products` | `store.change_product` | `PATCH products/<id>/`                      |
+  | `pause_orders`    | `store.pause_orders` | `PATCH store/`                                |
+
+- **CSRF**: every POST and PATCH, including login and logout, needs the header
+  `X-CSRFToken: <csrf_token>`. The token comes in the JSON of `GET session/`, `POST login/`
+  and `POST logout/`; the CSRF cookie is `HttpOnly`, so the app never reads cookies. Login
+  and logout replace the token: use the one in their response. Without a valid token:
+  `403 {"detail": "CSRF Failed: ..."}`; refetch `session/` and retry once.
+- Every staff response has `Cache-Control: no-store` and `X-Robots-Tag: noindex`.
+- Rate limit: 600 requests a minute per staff user (per client address before login),
+  scope `staff`. A throttled request gets 429 with DRF's `detail`.
+- Money is a string with 2 decimals; times are ISO 8601 in Kyrgyzstan time (+06:00). Validation errors
+  use `{"field": ["message"]}`. A field a PATCH may not change is an error
+  (`non_field_errors`), not silently ignored.
+
+### Session
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `session/` | — | Always 200. Sets the CSRF cookie. |
+| POST | `login/` | `{"username", "password"}` | 200: same as `session/` when logged in, with a new `csrf_token`. |
+| POST | `logout/` | `{}` | 200 `{"authenticated": false, "csrf_token": "..."}`. |
+
+```json
+{"authenticated": false, "csrf_token": "..."}
+{"authenticated": true, "csrf_token": "...",
+ "user": {"username": "aigul", "display_name": "Айгуль", "is_superuser": false,
+          "permissions": {"view_orders": true, "change_orders": true, "view_products": true,
+                          "change_products": true, "pause_orders": true}},
+ "backoffice_url": "/backoffice/"}
+```
+
+`display_name` is the user's full name, or the username if none is set. `backoffice_url` is
+present only for superusers.
+
+Failed logins (`store/staff/lockout.py`):
+
+- Wrong password, unknown user, inactive or non-staff account, missing field: all get
+  `400 {"non_field_errors": ["Неверный логин или пароль."]}`.
+- After 5 failures for one username (any letter case) or 20 from one client address, login
+  is refused until 15 minutes after the last failure, even with the right password:
+  `429 {"detail": "Слишком много попыток входа. Попробуйте через 15 минут.", "retry_after": 900}`
+  with `Retry-After: 900`. A successful login clears that username's counter.
+- The Django admin login at `/backoffice/login/` counts in the same place: failures there
+  count here and the other way round, and a locked username is refused there too (HTTP 429).
+- Failures and refusals are logged at WARNING with username and client address (the same
+  address the rate limits use), never the password.
+- The counters are in the cache alias `login_lockout`: files in `LOGIN_LOCKOUT_CACHE_DIR`,
+  shared by all gunicorn workers of one container. Several instances would each count on
+  their own, and a deploy starts with empty counters.
+
+### Orders
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `orders/summary/` | view | Counts for tabs. |
+| GET | `orders/` | view | Newest first, 25 per page. |
+| GET | `orders/<number>/` | view | Full order with items and journal. |
+| PATCH | `orders/<number>/` | change | `customer_name`, `phone`, `address`, `staff_note`. |
+| POST | `orders/<number>/status/` | change | `{"status": "confirmed", "note": ""}` |
+| POST | `orders/<number>/payment/` | change | `{"payment_status": "paid" \| "rejected" \| "refunded", "note": ""}` |
+| POST | `orders/<number>/cancel/` | change | `{"reason": "..."}`, 3–500 characters. |
+
+`orders/summary/`:
+`{"new": 3, "confirmed": 1, "preparing": 0, "ready": 0, "out_for_delivery": 2, "active": 6, "payment_pending": 1}`.
+`active` counts every order that is not completed or cancelled; `payment_pending` counts
+orders whose `payment_status` is `pending`, whatever their status.
+
+`orders/` parameters: `status` (`active` by default, `all`, or one status value),
+`payment_status` (optional), `q`, `page`. An unknown `status` or `payment_status` is a 400.
+`q` matches the order number (any part, any case), the phone in any accepted format (also
+part of the digits, e.g. `111 222`), or the customer's name (any letter case, Cyrillic
+included). Each result:
+
+```json
+{"number": "AT-000123", "status": "new", "payment_status": "unpaid", "payment_method": "cash",
+ "fulfillment": "delivery", "customer_name": "Айгерим", "phone": "+996555123456",
+ "total": "440.00", "items_count": 2, "created_at": "...", "updated_at": "..."}
+```
+
+`items_count` is the number of order lines (positions), not the number of units.
+
+`orders/<number>/` has the same fields plus:
+
+```json
+{"address": "...", "customer_note": "", "staff_note": "", "payment_reference": "",
+ "subtotal": "290.00", "delivery_fee": "150.00",
+ "items": [{"product_id": 1, "product_name": "Молоко 2.5%", "sku": "MILK-001", "unit": "1 л",
+            "quantity": 2, "unit_price": "85.00", "line_total": "170.00"}],
+ "events": [{"at": "...", "kind": "status", "from": "new", "to": "confirmed",
+             "actor": "Айгуль", "message": ""}],
+ "allowed_status_transitions": ["preparing"],
+ "allowed_payment_transitions": ["paid"],
+ "can_cancel": true,
+ "tracking_path": "/?order=<token>"}
+```
+
+- `events` is the order journal, oldest first. `kind`: `created`, `status`, `payment`,
+  `payment_reported`, `stock_restored`, `edited`, `migrated`. `actor` is the staff member's
+  display name, or `клиент` / `система`.
+- `allowed_status_transitions` comes from the lifecycle table above and never contains
+  `cancelled`; `can_cancel` says whether cancelling is allowed. `completed` is listed for an
+  MBANK order before its payment is marked paid, but the change is refused with a message
+  until it is.
+- `tracking_path` is the customer's private tracking link. Treat it like the order itself.
+- An unknown number: `404 {"detail": "Заказ не найден."}`.
+
+The three POST endpoints and the PATCH return the order detail (200).
+
+- `status/` refuses a transition the lifecycle does not allow, and `cancelled`, with
+  `400 {"status": ["..."]}` and changes nothing.
+- `payment/` refuses a change the payment table does not allow with
+  `400 {"payment_status": ["..."]}`.
+- `cancel/` needs a reason (`400 {"reason": [...]}` otherwise), returns the stock exactly
+  once, and refuses a closed order with `400 {"non_field_errors": [...]}`.
+- PATCH normalizes `phone` like checkout (`400 {"phone": [...]}` if invalid), refuses an
+  empty `address` for a delivery order and an empty `customer_name`, and refuses any other
+  field. Each real change adds an `edited` journal entry.
+
+### Products
+
+`GET products/` (view): every product, on sale or not, in hidden categories too, by name,
+50 per page. Parameters: `q` (Russian or Kyrgyz name or SKU, any letter case, like the public
+search), `category` (a slug; includes subcategories; unknown slug → empty page),
+`stock` (`all` default, `low` = 1–5, `out` = 0), `active` (`1` or `0`), `page`. A bad
+`stock` or `active` value is a 400. The page object also has `"low_stock_threshold": 5`.
+
+```json
+{"id": 1, "sku": "MILK-001", "name_ru": "Молоко 2.5%", "name_ky": "Сүт 2.5%",
+ "category_slug": "produkty", "category_name": "Продукты", "price": "85.00", "unit": "1 л",
+ "stock_quantity": 40, "is_active": true, "badge": "popular", "updated_at": "..."}
+```
+
+`PATCH products/<id>/` (change): any of `price` (above 0, at most 2 decimals),
+`stock_quantity` (0–100000), `is_active` (bool), `badge` (`null`, `popular`, `deal`, `new`).
+Names and SKU are not editable here (backoffice only), so search text never goes stale.
+Returns the product. The change is recorded in the Django admin history of the product
+("Панель персонала: цена 85.00 → 92.50; ..."). Unknown id: `404 {"detail": "Товар не найден."}`.
+
+### Store switch
+
+- `GET store/` (view_orders):
+  `{"is_accepting_orders": true, "accepts_orders_now": true, "delivery_enabled": true, "pickup_enabled": true, "delivery_fee": "150.00", "free_delivery_from": "2000.00", "min_order_total": "0.00"}`.
+  `is_accepting_orders` is the switch; `accepts_orders_now` also needs a way to receive and
+  to pay (what `GET /api/store/` shows customers).
+- `PATCH store/` (pause_orders): only `{"is_accepting_orders": true | false}`. Any other
+  field is a 400; other settings stay with the owner in the backoffice. The change is
+  logged and recorded in the Django admin history with the staff member's name.
+
+## Serving the storefront
+
+`config/views.py`, `config/frontend.py` and the URL map in `config/urls.py`:
+
+- WhiteNoise serves the files of the built storefront (`FRONTEND_DIST_DIR`, default
+  `../dist`) at the site root. Hashed files (`/assets/name-HASH.ext`, and Django's hashed
+  admin files) get `Cache-Control: public, max-age=31536000, immutable`; others get a short
+  cache.
+- Every other path except `/api/`, `/static/`, `/assets/` and the backoffice gets
+  `index.html` (GET and HEAD only), read once per process (on every request when DEBUG is
+  on), with `Cache-Control: no-cache`, the Content Security Policy and the other security
+  headers. `/admin...` pages also get `X-Robots-Tag: noindex, nofollow`.
+- A missing file under `/assets/` or `/static/` is a real 404, so a stale page asking for an
+  old chunk fails clearly instead of receiving HTML.
+- Without a build (`index.html` missing), pages answer 503 with a plain-text explanation and
+  the API keeps working. In development use the Vite dev server instead.
+
+## Django admin (backoffice)
+
+The owner's tool, at `/backoffice/` (`DJANGO_ADMIN_PATH`). The owner logs in as superuser.
+Each staff member gets a personal account in the "Store staff" group, never a shared login
+and never superuser. Create the user in Backoffice → Пользователи → Добавить, then:
 
 ```bash
 ../.venv/bin/python manage.py setup_staff_group --add-user aigul
 ```
 
-The group can: view and process
-orders, add and edit products (price, stock, on sale, badge), view categories, view store
-settings, and pause or resume online orders. It cannot delete anything, edit categories,
-or change MBANK payment details, so nobody but the owner can redirect customer payments.
+The group can: view and process orders, add and edit products (price, stock, on sale,
+badge), view categories, view store settings, and pause or resume online orders. It cannot
+delete anything, edit categories, or change MBANK payment details, so nobody but the owner
+can redirect customer payments.
 
-Daily order handling (Admin → Заказы):
+Daily order handling happens in the staff panel at `/admin`. The same work is still possible
+in the backoffice (Backoffice → Заказы):
 
 1. Filter by status "Новый". Open the order, call the customer if anything is unclear.
 2. Press **Подтвердить**, then **Начать сборку** while picking the goods.
@@ -310,17 +509,19 @@ The same steps exist as bulk actions on the order list. Status and payment field
 edited directly; only these buttons and actions change them, and only along the lifecycle
 above. Staff can fix the customer's name, phone and address and keep an internal note.
 Every change, with who made it and when, appears in the order's journal ("журнал заказа")
-and in Admin → Журнал заказов. Orders cannot be created or deleted by staff; the owner can
-delete only completed or cancelled orders.
+and in Backoffice → Журнал заказов. Orders cannot be created or deleted by staff; the owner
+can delete only completed or cancelled orders.
 
 Products: edit price, stock, "в продаже" and badge directly in the list. The "остаток"
 filter shows sold-out and low-stock (1–5) items. Search ignores letter case in Russian and
 Kyrgyz.
 
-Store settings: Admin → Настройки магазина (one record). Staff can only switch
+Store settings: Backoffice → Настройки магазина (one record). Staff can only switch
 "принимать онлайн-заказы". The owner sets contacts, delivery fee, free-delivery threshold,
 minimum order and payment options. MBANK can be switched on only with a recipient and a
 valid Kyrgyz phone number.
+
+The backoffice login shares the staff login lockout (see "Failed logins" above).
 
 ## Management commands
 
@@ -334,24 +535,29 @@ valid Kyrgyz phone number.
 
 ```bash
 cd backend
-../.venv/bin/python manage.py test store -v 2
+../.venv/bin/python manage.py test -v 2
 ```
 
 CI runs the same suite with `config.test_runner.TestRunner` on SQLite and PostgreSQL. The
 tests set their own cache and throttle rates, so they do not depend on local settings.
 
-Tests live in `store/tests/`. They cover the contract shapes, Cyrillic search, checkout
-rules, idempotency, throttling, the status and payment tables, stock restore, the admin
-actions and permissions, the commands, and the data migrations.
+Tests live in `store/tests/` and `config/`. They cover the contract shapes, Cyrillic search,
+checkout rules, idempotency, throttling, the status and payment tables, stock restore, the
+admin actions and permissions, the commands, the data migrations, the staff API
+(`test_staff_auth.py`: who gets in, CSRF, the login lockout shared with the backoffice;
+`test_staff_orders.py`; `test_staff_products.py`), serving the storefront
+(`config/test_frontend.py`) and production settings run in a child process
+(`config/tests.py`: `__Host-` cookies, the deploy check, lockout counters shared between
+processes).
 
 Three tests in `test_concurrency.py` need PostgreSQL (row locks); SQLite skips them. To
 run everything against PostgreSQL:
 
 ```bash
 docker run -d --rm --name alatoo-pg -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=alatoo \
-  -p 127.0.0.1:55433:5432 postgres:16-bookworm
+  -p 127.0.0.1:55433:5432 postgres:18
 DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55433/alatoo DB_SSLMODE=disable \
-  ../.venv/bin/python manage.py test store -v 2
+  ../.venv/bin/python manage.py test -v 2
 docker stop alatoo-pg
 ```
 
@@ -379,6 +585,14 @@ migration does not return it either. Check stock by hand if such orders exist.
   uses up the checkout limit.
 - Throttle counters use the default cache. The default local-memory cache is per process,
   so with several gunicorn workers the effective limit is multiplied by the worker count.
+  The staff login lockout does not have this problem: it uses the `login_lockout` cache,
+  shared by all workers of a container.
+- The staff login lockout uses the same client address as the throttles, so the
+  `NUM_PROXIES` / `CLIENT_IP_HEADER` setup matters for it too: with a wrong setting every
+  login appears to come from the proxy, and 20 failures anywhere lock all staff logins.
 - User-facing DRF messages are Russian because `LANGUAGE_CODE = "ru"`.
-- The order tracking URL contains the secret token. The storefront should send
-  `Referrer-Policy: same-origin` (or stricter) so the token does not leak to third parties.
+- The order tracking URL contains the secret token. Storefront pages are sent with
+  `Referrer-Policy: strict-origin-when-cross-origin`, so other sites receive only the origin,
+  never the path or the token.
+- Production cookies are named `__Host-sessionid` and `__Host-csrftoken` (Secure, `Path=/`,
+  no `Domain`). Changing the cookie names logs everybody out once.

@@ -65,9 +65,8 @@ jobs:
       - name: Deploy check with production settings
         env:
           DJANGO_DEBUG: '0'
-          DJANGO_ALLOWED_HOSTS: api.example.com
-          CSRF_TRUSTED_ORIGINS: https://api.example.com
-          CORS_ALLOWED_ORIGINS: https://shop.example.com
+          DJANGO_ALLOWED_HOSTS: shop.example.com
+          CSRF_TRUSTED_ORIGINS: https://shop.example.com
         run: |
           DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')" \
             python manage.py check --deploy --fail-level WARNING
@@ -118,7 +117,7 @@ jobs:
   deploy-config:
     name: Docker image and Render Blueprint
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -127,23 +126,22 @@ jobs:
         run: |
           pipx run check-jsonschema==0.38.2 \
             --schemafile https://render.com/schema/render.yaml.json render.yaml
+      # One image for everything: the storefront is built inside it, so the build context
+      # is the repository root (see .dockerignore).
       - name: Build
-        run: docker build --tag ala-too-api:ci backend
-      - name: Smoke test with production settings
+        run: docker build --file backend/Dockerfile --tag ala-too:ci .
+      - name: Start the image with production settings
         run: |
-          docker run --detach --name api --publish 8000:8000 \
+          docker run --detach --name app --publish 8000:8000 \
             --env DJANGO_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')" \
             --env DJANGO_ALLOWED_HOSTS=localhost \
             --env DATABASE_URL=sqlite:////tmp/smoke.sqlite3 \
             --env DJANGO_MIGRATE_ON_START=1 \
-            ala-too-api:ci
-          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
-            http://localhost:8000/api/health/
-          curl --fail --silent --show-error "http://localhost:8000/api/health/?db=1"
-          # Admin CSS is served by WhiteNoise from the files collected at build time.
-          curl --fail --silent --show-error --output /dev/null \
-            --header 'X-Forwarded-Proto: https' \
-            http://localhost:8000/static/admin/css/base.css
+            ala-too:ci
+      # Pages get index.html with the CSP (/admin... also noindex), unknown API paths a
+      # JSON 404, /backoffice/ the Django admin, and hashed assets a one-year cache.
+      - name: Smoke test
+        run: .github/scripts/smoke-test.sh http://localhost:8000
       - name: Container logs
         if: always()
-        run: docker logs api || true
+        run: docker logs app || true

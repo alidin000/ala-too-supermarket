@@ -10,7 +10,9 @@ export function Hero() {
     <section className="hero container" aria-labelledby="page-title">
       <div className="hero__inner">
         <div className="hero__copy">
-          <p className="hero__eyebrow">{t('hero.eyebrow', { city: config?.city || 'Бишкек' })}</p>
+          <p className="hero__eyebrow">
+            {t('hero.eyebrow', { city: config?.city || 'Кызыл-Кия' })}
+          </p>
           <h1 id="page-title" className="hero__title" tabIndex={-1}>
             {t('hero.title1')} <em>{t('hero.title2')}</em>
           </h1>

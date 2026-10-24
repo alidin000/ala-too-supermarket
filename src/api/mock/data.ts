@@ -217,7 +217,7 @@ export const MOCK_PRODUCTS: MockProduct[] = [
 export function mockStoreConfig(options: { closed: boolean; mbank: boolean }): StoreConfig {
   return {
     name: 'Ала-Тоо Маркет',
-    city: 'Бишкек',
+    city: 'Кызыл-Кия',
     // Left empty on purpose: the demo must not show a real-looking phone or address.
     phone: '',
     pickup_address: '',
