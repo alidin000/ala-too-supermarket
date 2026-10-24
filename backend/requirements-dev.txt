@@ -1,0 +1,5 @@
+# Development and CI tools, on top of the pinned runtime set.
+# Install both from the repository root:
+#   .venv/bin/pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+-r requirements.txt
+ruff==0.17.2

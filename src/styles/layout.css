@@ -1,0 +1,448 @@
+/* App shell: banners, header, footer and the phone cart bar. */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.main {
+  flex: 1;
+}
+
+/* --- Demo and "closed" banners ----------------------------------------------------- */
+
+.demo-banner {
+  background: repeating-linear-gradient(-45deg, #ffe28a 0 14px, #ffd75e 14px 28px);
+  color: #2b1d00;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+.demo-banner__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-block: var(--sp-2);
+}
+
+.demo-banner__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.demo-banner__title {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.closed-banner {
+  background: var(--c-warning-soft);
+  color: var(--c-warning-ink);
+  font-weight: 600;
+  line-height: var(--lh-snug);
+}
+
+.closed-banner__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-block: var(--sp-3);
+}
+
+.closed-banner__icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+/* --- Header -------------------------------------------------------------------------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  border-bottom: 1px solid var(--c-border);
+  background: rgb(255 255 255 / 0.94);
+  backdrop-filter: saturate(1.4) blur(10px);
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: var(--header-h);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--tap);
+  color: var(--c-text);
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--c-text);
+}
+
+.brand .brand-mark {
+  flex: none;
+  width: 38px;
+  height: 38px;
+}
+
+.brand__text {
+  display: grid;
+  min-width: 0;
+}
+
+/* Phones narrower than 420px with three header controls: keep the mark and "Ала-Тоо". */
+@media (max-width: 419px) {
+  .site-header__inner:has(.site-header__nav > :nth-child(3)) .brand__accent {
+    display: none;
+  }
+}
+
+.brand__name {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand__accent {
+  color: var(--c-brand);
+}
+
+.brand__tagline {
+  display: none;
+  color: var(--c-text-subtle);
+  font-size: var(--fs-xs);
+}
+
+.site-header__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.header-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.header-btn:hover {
+  background: var(--c-brand-softer);
+  color: var(--c-brand-ink);
+}
+
+.header-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* On phones the labels stay available to screen readers only. */
+.header-btn__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.header-btn--cart {
+  background: var(--c-brand);
+  color: #fff;
+}
+
+.header-btn--cart:hover {
+  background: var(--c-brand-strong);
+  color: #fff;
+}
+
+.header-btn__count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 2px solid var(--c-surface);
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  color: #2b1d00;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+@media (min-width: 640px) {
+  .brand .brand-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brand__name {
+    font-size: 1.1875rem;
+  }
+
+  .brand__tagline {
+    display: block;
+  }
+}
+
+@media (min-width: 900px) {
+  .site-header__nav {
+    gap: var(--sp-3);
+  }
+
+  .header-btn {
+    padding: 0 var(--sp-4);
+  }
+
+  .header-btn__label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+
+  .header-btn__count {
+    position: static;
+    border: 0;
+    background: var(--c-surface);
+    color: var(--c-brand-ink);
+  }
+}
+
+/* --- Footer -------------------------------------------------------------------------- */
+
+.site-footer {
+  margin-top: var(--sp-8);
+  padding-top: var(--sp-10);
+  /* Room for the fixed cart bar on phones. */
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  background: var(--c-footer);
+  color: var(--c-footer-text);
+  font-size: var(--fs-sm);
+}
+
+.site-footer a {
+  color: var(--c-footer-text);
+}
+
+.site-footer a:hover {
+  color: #fff;
+}
+
+.site-footer :focus-visible {
+  outline-color: var(--c-accent);
+}
+
+.site-footer__inner {
+  display: grid;
+  gap: var(--sp-8);
+}
+
+.site-footer__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.site-footer__name {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+
+.site-footer__tagline,
+.site-footer__muted {
+  color: var(--c-footer-muted);
+}
+
+.site-footer__heading {
+  margin-bottom: var(--sp-3);
+  color: var(--c-footer-muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.site-footer__list {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.site-footer__list li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+}
+
+.site-footer__list svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--c-footer-muted);
+}
+
+.site-footer__list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
+.site-footer__bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-8);
+  padding-top: var(--sp-5);
+  border-top: 1px solid rgb(255 255 255 / 0.14);
+  color: var(--c-footer-muted);
+}
+
+@media (min-width: 720px) {
+  .site-footer__inner {
+    grid-template-columns: 1.4fr 1fr 1fr;
+  }
+}
+
+@media (min-width: 900px) {
+  .site-footer {
+    padding-bottom: var(--sp-8);
+  }
+}
+
+/* --- Phone cart bar ------------------------------------------------------------------ */
+
+.cart-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-cartbar);
+  padding: var(--sp-2) var(--sp-3) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--c-page) 55%, rgb(248 246 240 / 0));
+  animation: rise var(--dur-slow) var(--ease-out);
+}
+
+.cart-bar__button {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 60px;
+  padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--c-brand);
+  color: #fff;
+  text-align: left;
+  box-shadow: var(--shadow-3);
+}
+
+.cart-bar__button:hover {
+  background: var(--c-brand-strong);
+}
+
+.cart-bar__icon {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+  background: rgb(255 255 255 / 0.14);
+}
+
+.cart-bar__icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.cart-bar__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  color: #2b1d00;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cart-bar__text {
+  display: grid;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.cart-bar__label {
+  font-weight: 700;
+}
+
+.cart-bar__meta {
+  font-size: var(--fs-sm);
+  opacity: 0.9;
+}
+
+.cart-bar__total {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.cart-bar__chevron {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@media (min-width: 900px) {
+  .cart-bar {
+    display: none;
+  }
+}

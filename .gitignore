@@ -1,6 +1,35 @@
-node_modules
-dist
+# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+.eslintcache
+coverage/
+*.log
+
+# Environment files (keep the documented examples)
 .env
 .env.*
 !.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Django local state
+*.sqlite3
+*.sqlite3-journal
+backend/staticfiles/
+backend/media/
+
+# Editors and OS
 .DS_Store
+Thumbs.db
+.idea/

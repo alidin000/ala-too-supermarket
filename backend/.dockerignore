@@ -1,0 +1,17 @@
+# Keep local state and secrets out of the image and the build context.
+# Patterns follow Docker's rules: a bare name matches only at the context root.
+**/.env
+**/.env.*
+**/*.sqlite3
+staticfiles/
+media/
+**/__pycache__
+**/*.py[cod]
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+Dockerfile
+.dockerignore

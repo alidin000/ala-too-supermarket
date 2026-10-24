@@ -1,0 +1,10 @@
+# Generated or vendored output
+dist/
+coverage/
+node_modules/
+package-lock.json
+
+# Python side: formatted by ruff, documented by the backend owner
+backend/
+.venv/
+docs/

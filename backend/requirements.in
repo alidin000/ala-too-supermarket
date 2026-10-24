@@ -1,0 +1,12 @@
+# Direct runtime dependencies of the API, as compatible ranges.
+# requirements.txt is generated from this file and pins every package exactly.
+# After editing this file, regenerate the pins from backend/:
+#   pip install pip-tools && pip-compile --no-emit-index-url --strip-extras --output-file=requirements.txt requirements.in
+Django>=5.2,<5.3  # 5.2 is the LTS line; stay on it until 6.2 LTS
+djangorestframework>=3.16,<4
+django-cors-headers>=4.7,<5
+dj-database-url>=3.0,<4
+psycopg[binary]>=3.2,<4
+python-dotenv>=1.0,<2
+whitenoise>=6.9,<7
+gunicorn>=25.1,<27  # 25.1 added --no-control-socket, used by the Dockerfile

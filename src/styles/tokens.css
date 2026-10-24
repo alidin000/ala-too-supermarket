@@ -1,0 +1,120 @@
+/*
+ * Design tokens. Components use these custom properties, never raw values, so the look
+ * stays consistent and can be tuned in one place.
+ * Contrast notes (WCAG 2.2 AA) are measured against --c-surface (#fff) unless stated.
+ */
+:root {
+  color-scheme: light;
+
+  /* Brand: the store's green, plus a saffron "sun" accent taken from the mark. */
+  --c-brand: #286647; /* white text on it: 6.8:1 */
+  --c-brand-strong: #1e5137; /* hover / pressed */
+  --c-brand-ink: #1b4a33; /* green text on light green: 8.5:1 */
+  --c-brand-soft: #e3efe4;
+  --c-brand-softer: #f0f6ef;
+  --c-accent: #f6c453;
+  --c-accent-soft: #fff4d6;
+  --c-accent-ink: #5b3d00; /* on --c-accent-soft: 9:1 */
+
+  /* Warm neutrals. */
+  --c-page: #f8f6f0;
+  --c-surface: #ffffff;
+  --c-surface-sunken: #f2efe6;
+  --c-border: #e6e1d4; /* decorative dividers */
+  --c-border-strong: #8a8270; /* form-control borders: 3.8:1 */
+  --c-text: #1b2420; /* 15:1 */
+  --c-text-muted: #4f5a52; /* 7.2:1 */
+  --c-text-subtle: #5c665f; /* small grey text: 6:1, 5.2:1 on --c-surface-sunken */
+
+  /* Feedback. Each ink is at least 5.7:1 on its soft background. */
+  --c-danger: #b3261e;
+  --c-danger-soft: #fdecea;
+  --c-warning-ink: #7a4b00;
+  --c-warning-soft: #fff4dc;
+  --c-info-ink: #1f5f8b;
+  --c-info-soft: #e6f1f8;
+  --c-deal-ink: #9a3a12;
+  --c-deal-soft: #fdeee6;
+
+  /* Footer on dark green: text 11:1, muted 7.6:1. */
+  --c-footer: #17382a;
+  --c-footer-text: #e8efe9;
+  --c-footer-muted: #b9cbbf;
+
+  /* Illustration. */
+  --c-sun: #f6c453;
+  --c-hill-far: #c9dccb;
+  --c-hill-mid: #7fae8b;
+  --c-hill-near: #286647;
+
+  --c-focus: #1b4a33;
+  --c-backdrop: rgb(16 28 21 / 0.5);
+
+  /* Type. One Cyrillic-first family; headings and prices use heavier weights. */
+  --font-sans:
+    'Onest Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-display: var(--font-sans);
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.25rem;
+  --fs-2xl: clamp(1.375rem, 1.15rem + 1vw, 1.75rem);
+  --fs-3xl: clamp(1.625rem, 1.25rem + 1.6vw, 2.25rem);
+  --fs-hero: clamp(1.75rem, 1.1rem + 3vw, 3.5rem);
+  --lh-tight: 1.12;
+  --lh-snug: 1.3;
+  --lh-body: 1.55;
+
+  /* Space: a 4px scale. */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.25rem;
+  --sp-6: 1.5rem;
+  --sp-8: 2rem;
+  --sp-10: 2.5rem;
+  --sp-12: 3rem;
+  --sp-16: 4rem;
+
+  /* Shape and depth. */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+  --shadow-1: 0 1px 2px rgb(27 36 32 / 0.06), 0 1px 1px rgb(27 36 32 / 0.04);
+  --shadow-2: 0 8px 20px -8px rgb(24 60 40 / 0.22), 0 2px 4px rgb(27 36 32 / 0.05);
+  --shadow-3: 0 24px 48px -16px rgb(20 50 35 / 0.38);
+
+  /* Motion. Disabled under prefers-reduced-motion (base.css). */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+
+  /* Layout. */
+  --tap: 44px; /* minimum touch target */
+  --gutter: 16px;
+  --container: 1200px;
+  --header-h: 60px;
+  --z-header: 20;
+  --z-cartbar: 30;
+  --z-dialog: 50;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --gutter: 24px;
+    --header-h: 68px;
+  }
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --gutter: 32px;
+  }
+}

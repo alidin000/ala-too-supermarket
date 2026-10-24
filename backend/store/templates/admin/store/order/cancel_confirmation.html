@@ -1,0 +1,50 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Начало</a>
+  &rsaquo; <a href="{% url 'admin:store_order_changelist' %}">Заказы</a>
+  &rsaquo; Отмена
+</div>
+{% endblock %}
+{% block content %}
+<div id="content-main">
+  <p>
+    Эти заказы будут отменены. Зарезервированный товар вернётся на склад.
+    Отменённый заказ нельзя вернуть в работу.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Номер</th><th>Клиент</th><th>Статус</th><th>Оплата</th><th>Итого, сом</th></tr>
+    </thead>
+    <tbody>
+      {% for order in orders %}
+      <tr>
+        <td>{{ order.number }}</td>
+        <td>{{ order.customer_name }}, {{ order.phone }}</td>
+        <td>{{ order.get_status_display }}</td>
+        <td>{{ order.get_payment_status_display }}</td>
+        <td>{{ order.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if paid_orders %}
+  <p class="errornote">
+    Уже оплачены: {% for order in paid_orders %}{{ order.number }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+    После отмены верните деньги клиенту и отметьте «Деньги возвращены».
+  </p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="ids" value="{{ ids }}">
+    <p>
+      <label for="id_reason">Причина отмены (попадёт в журнал заказа):</label><br>
+      <textarea id="id_reason" name="reason" rows="3" cols="60"></textarea>
+    </p>
+    <div class="submit-row">
+      <input type="submit" value="Да, отменить">
+      <a href="{{ back_url }}" class="button cancel-link">Нет, вернуться</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

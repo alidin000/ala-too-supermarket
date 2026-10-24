@@ -1,0 +1,28 @@
+{% extends "admin/change_form.html" %}
+{% comment %}
+  Order workflow buttons. They submit the change form to the workflow URL (formaction), so the
+  CSRF token is reused. The view ignores the other form fields.
+{% endcomment %}
+{% block after_field_sets %}
+{{ block.super }}
+{% if order_actions or cancel_url %}
+<fieldset class="module aligned">
+  <h2>Действия с заказом</h2>
+  <div class="form-row">
+    <p class="help">
+      Кнопка сразу меняет статус или оплату и записывает действие в журнал.
+      Несохранённые правки полей выше при этом не сохраняются.
+    </p>
+    <p>
+      {% for action in order_actions %}
+        <button type="submit" class="button" formaction="{{ workflow_url }}" formnovalidate
+                name="order_action" value="{{ action.code }}">{{ action.label }}</button>
+      {% endfor %}
+      {% if cancel_url %}
+        <a class="button" href="{{ cancel_url }}">Отменить заказ…</a>
+      {% endif %}
+    </p>
+  </div>
+</fieldset>
+{% endif %}
+{% endblock %}

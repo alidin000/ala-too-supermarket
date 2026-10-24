@@ -1,0 +1,13 @@
+# Tool settings for the Django API. Dependencies live in requirements.in / requirements.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Django writes migrations; reviewing them by hand matters more than their style.
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "store"]
