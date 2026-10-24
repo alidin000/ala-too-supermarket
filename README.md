@@ -239,8 +239,9 @@ So the free plan is for showing the shop, not for taking real orders.
 
 1. Merge the work into `main` on GitHub. CI runs on the pull request and again on `main`;
    Render deploys only commits whose checks pass.
-2. Sign up at [render.com](https://render.com) with GitHub. No card is needed for free
-   services. Allow Render to read this repository.
+2. Sign up at [render.com](https://render.com) with GitHub and allow Render to read this
+   repository. Render may ask for a payment card to verify the account, even for free
+   services; support describes it as a $1 check that is cancelled at once.
 3. In the dashboard choose **New → Blueprint**, pick this repository and the `main`
    branch. Render reads `render.yaml` and shows the web service and the database.
 4. Render asks for the values marked `sync: false`:
